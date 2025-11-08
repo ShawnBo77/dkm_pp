@@ -8,6 +8,8 @@ This is just simple test harness without any external dependencies.
 
 #include "../../include/dkm.hpp"
 #include "../../include/dkm_parallel.hpp"
+// #include "../../include/dkm_thread.hpp"
+#include "../../include/dkm_avx.hpp"
 #include "../../include/dkm_utils.hpp"
 #include "lest.hpp"
 
@@ -16,12 +18,61 @@ This is just simple test harness without any external dependencies.
 #include <cstdint>
 #include <algorithm>
 #include <tuple>
+#include <iostream>
 
 #ifdef __clang__
 #pragma clang diagnostic ignored "-Wmissing-braces"
 #endif
 
 constexpr uint64_t random_seed_value = 7;
+
+template <typename T, size_t N>
+void verify_clustering_results(
+	lest::env& $, // 傳入 lest 環境
+	const std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>>& standard,
+	const std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>>& to_verify) {
+	
+	auto& serial_means = std::get<0>(standard);
+	auto& serial_clusters = std::get<1>(standard);
+	auto& verified_means = std::get<0>(to_verify);
+	auto& verified_clusters = std::get<1>(to_verify);
+
+	EXPECT(serial_means.size() == verified_means.size());
+
+	// 解決標籤排列問題
+	std::vector<int> serial_to_verified_map(serial_means.size(), -1);
+	std::vector<bool> verified_mean_is_matched(verified_means.size(), false);
+
+	for (size_t i = 0; i < serial_means.size(); ++i) {
+		T min_dist_sq = -1;
+		int best_match_idx = -1;
+
+		for (size_t j = 0; j < verified_means.size(); ++j) {
+			if (verified_mean_is_matched[j]) continue;
+
+			T dist_sq = dkm::details::distance_squared(serial_means[i], verified_means[j]);
+			if (best_match_idx == -1 || dist_sq < min_dist_sq) {
+				min_dist_sq = dist_sq;
+				best_match_idx = j;
+			}
+		}
+		
+		serial_to_verified_map[i] = best_match_idx;
+		verified_mean_is_matched[best_match_idx] = true;
+
+		// 驗證中心點座標
+		for (size_t dim = 0; dim < N; ++dim) {
+			EXPECT(serial_means[i][dim] == lest::approx(verified_means[best_match_idx][dim]));
+		}
+	}
+
+	// 驗證群集分配
+	for (size_t i = 0; i < serial_clusters.size(); ++i) {
+		uint32_t serial_label = serial_clusters[i];
+		uint32_t verified_label = verified_clusters[i];
+		EXPECT(serial_to_verified_map[serial_label] == (int)verified_label);
+	}
+}
 
 const lest::test specification[] = {
 	CASE("Small 2D dataset is successfully segmented into 3 clusters",) {
@@ -96,6 +147,222 @@ const lest::test specification[] = {
 				std::vector<uint32_t> expected_clusters = { 0, 2, 2, 2, 1, 1, 1, 0, 0, 2, 2, 2, 2, 1, 0, 0, 1};
 				EXPECT(clusters.size() == data.size());
 				EXPECT(clusters == expected_clusters);
+			}
+
+			// SECTION("K-means calculated correctly via parallel Lloyds method (thread)") {
+			// 	auto means_clusters = dkm::kmeans_lloyd_thread(data, parameters); // 呼叫 Pthread 版本
+			// 	auto means = std::get<0>(means_clusters);
+			// 	auto clusters = std::get<1>(means_clusters);
+
+			// 	EXPECT(means.size() == 3u);
+			// 	EXPECT(clusters.size() == data.size());
+			// 	std::vector<std::array<float, 2>> expected_means{{15.9984f, 23.3856f}, {134.625f, 17.6372f}, {-28.6281f, -11.5276f}};
+			// 	EXPECT(means.size() == 3u);
+			// 	for (size_t i = 0; i < means.size(); ++i) {
+			// 		for (size_t j = 0; j < means[i].size(); ++j) {
+			// 			EXPECT(means[i][j] == lest::approx(expected_means[i][j]));
+			// 		}
+			// 	}
+			// 	std::vector<uint32_t> expected_clusters = { 0, 2, 2, 2, 1, 1, 1, 0, 0, 2, 2, 2, 2, 1, 0, 0, 1};
+			// 	EXPECT(clusters.size() == data.size());
+			// 	EXPECT(clusters == expected_clusters);
+			// }
+
+			SECTION("K-means calculated correctly via parallel Lloyds method (AVX2)") {
+				auto means_clusters = dkm::kmeans_lloyd_avx(data, parameters);
+				auto means = std::get<0>(means_clusters);
+				auto clusters = std::get<1>(means_clusters);
+				// verify results (will use scalar fallback for N=2, so should be identical)
+				EXPECT(means.size() == 3u);
+				EXPECT(clusters.size() == data.size());
+				std::vector<std::array<float, 2>> expected_means{{15.9984f, 23.3856f}, {134.625f, 17.6372f}, {-28.6281f, -11.5276f}};
+				EXPECT(means.size() == 3u);
+				for (size_t i = 0; i < means.size(); ++i) {
+					for (size_t j = 0; j < means[i].size(); ++j) {
+						EXPECT(means[i][j] == lest::approx(expected_means[i][j]));
+					}
+				}
+				std::vector<uint32_t> expected_clusters = { 0, 2, 2, 2, 1, 1, 1, 0, 0, 2, 2, 2, 2, 1, 0, 0, 1};
+				EXPECT(clusters.size() == data.size());
+				EXPECT(clusters == expected_clusters);
+			}
+		}
+	},
+
+	CASE("Test AVX implementation with varied N=8 float data",) {
+        SETUP("8D float dataset with varied values") {
+            std::vector<std::array<float, 8>> data{
+                {1.1f, -2.2f, 3.3f, -4.4f, 5.5f, -6.6f, 7.7f, -8.8f},
+                {1.2f, -2.3f, 3.4f, -4.5f, 5.6f, -6.7f, 7.8f, -8.9f},
+                {-10.1f, 11.2f, -12.3f, 13.4f, -14.5f, 15.6f, -16.7f, 17.8f},
+                {-10.2f, 11.3f, -12.4f, 13.5f, -14.6f, 15.7f, -16.8f, 17.9f},
+                {100.5f, 101.5f, 102.5f, 103.5f, 104.5f, 105.5f, 106.5f, 107.5f},
+                {100.6f, 101.6f, 102.6f, 103.6f, 104.6f, 105.6f, 106.6f, 107.6f}
+            };
+            dkm::clustering_parameters<float> parameters(3);
+			parameters.set_random_seed(random_seed_value);
+
+            SECTION("AVX version produces same result as scalar version") {
+                auto serial_res = dkm::kmeans_lloyd(data, parameters);
+                auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+
+                auto serial_means = std::get<0>(serial_res);
+                auto avx_means = std::get<0>(avx_res);
+                auto serial_clusters = std::get<1>(serial_res);
+                auto avx_clusters = std::get<1>(avx_res);
+
+                EXPECT(avx_means.size() == serial_means.size());
+                EXPECT(avx_clusters == serial_clusters);
+                for(size_t i = 0; i < serial_means.size(); ++i) {
+                    for(size_t j = 0; j < 8; ++j) {
+                        EXPECT(serial_means[i][j] == lest::approx(avx_means[i][j]));
+                    }
+                }
+            }
+        }
+    },
+
+	CASE("Test AVX implementation with dimension not a multiple of 8 (N=10)",) {
+		SETUP("10D float dataset to test remainder handling") {
+			std::vector<std::array<float, 10>> data{
+                {1.1f, -2.2f, 3.3f, -4.4f, 5.5f, -6.6f, 7.7f, -8.8f, 9.9f, -10.1f},
+                {1.2f, -2.3f, 3.4f, -4.5f, 5.6f, -6.7f, 7.8f, -8.9f, 9.8f, -10.2f},
+                {-10.1f, 11.2f, -12.3f, 13.4f, -14.5f, 15.6f, -16.7f, 17.8f, -18.9f, 19.0f},
+                {-10.2f, 11.3f, -12.4f, 13.5f, -14.6f, 15.7f, -16.8f, 17.9f, -18.8f, 19.1f}
+            };
+			dkm::clustering_parameters<float> parameters(2);
+			parameters.set_random_seed(random_seed_value);
+
+			SECTION("AVX version (N=10) produces same result as scalar version") {
+                auto serial_res = dkm::kmeans_lloyd(data, parameters);
+                auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+
+                auto serial_means = std::get<0>(serial_res);
+                auto avx_means = std::get<0>(avx_res);
+                auto serial_clusters = std::get<1>(serial_res);
+                auto avx_clusters = std::get<1>(avx_res);
+
+                EXPECT(avx_means.size() == serial_means.size());
+                EXPECT(avx_clusters == serial_clusters);
+                for(size_t i = 0; i < serial_means.size(); ++i) {
+                    for(size_t j = 0; j < 10; ++j) { // 檢查所有10個維度
+                        EXPECT(serial_means[i][j] == lest::approx(avx_means[i][j]));
+                    }
+                }
+			}
+		}
+	},
+
+	CASE("Test AVX implementation for integer types (N=8)",) {
+		SETUP("8D integer dataset") {
+			std::vector<std::array<int, 8>> data{
+				{1, 2, 3, 4, 5, 6, 7, 8},
+				{-1, -2, -3, -4, -5, -6, -7, -8},
+				{10, 20, 30, 40, 50, 60, 70, 80},
+				{-10, -20, -30, -40, -50, -60, -70, -80},
+				{101, 102, 103, 104, 105, 106, 107, 108},
+				{-101, -102, -103, -104, -105, -106, -107, -108}
+			};
+			dkm::clustering_parameters<int> parameters(3);
+			parameters.set_random_seed(random_seed_value);
+
+			SECTION("AVX integer version produces same result as scalar version") {
+				auto serial_res = dkm::kmeans_lloyd(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				
+				auto serial_means = std::get<0>(serial_res);
+                auto avx_means = std::get<0>(avx_res);
+                auto serial_clusters = std::get<1>(serial_res);
+                auto avx_clusters = std::get<1>(avx_res);
+
+                EXPECT(avx_means.size() == serial_means.size());
+                EXPECT(avx_clusters == serial_clusters);
+                for(size_t i = 0; i < serial_means.size(); ++i) {
+                    for(size_t j = 0; j < 8; ++j) {
+                        EXPECT(serial_means[i][j] == avx_means[i][j]);
+                    }
+                }
+			}
+		}
+	},
+
+	CASE("Verify correctness with benchmark dataset: iris.data.csv",) {
+		// lest::env& $ 參數是 lest 框架自動傳入的
+		SETUP(lest::env& $) {
+			auto data = dkm::load_csv<float, 2>("../bench/iris.data.csv");
+			dkm::clustering_parameters<float> parameters(3);
+			parameters.set_random_seed(42);
+
+			auto serial_res = dkm::kmeans_lloyd(data, parameters);
+			
+			SECTION("Parallel version matches serial version") {
+				auto parallel_res = dkm::kmeans_lloyd_parallel(data, parameters);
+				verify_clustering_results($, serial_res, parallel_res);
+			}
+
+			SECTION("AVX version matches serial version") {
+				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				verify_clustering_results($, serial_res, avx_res);
+			}
+		}
+	},
+
+	CASE("Verify correctness with benchmark dataset: s1.data.csv",) {
+		SETUP(lest::env& $) {
+			auto data = dkm::load_csv<float, 2>("../bench/s1.data.csv");
+			dkm::clustering_parameters<float> parameters(15);
+			parameters.set_random_seed(42);
+
+			auto serial_res = dkm::kmeans_lloyd(data, parameters);
+			
+			SECTION("Parallel version matches serial version") {
+				auto parallel_res = dkm::kmeans_lloyd_parallel(data, parameters);
+				verify_clustering_results($, serial_res, parallel_res);
+			}
+
+			SECTION("AVX version matches serial version") {
+				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				verify_clustering_results($, serial_res, avx_res);
+			}
+		}
+	},
+
+	CASE("Verify correctness with benchmark dataset: birch3.data.csv",) {
+		SETUP(lest::env& $) {
+			auto data = dkm::load_csv<float, 2>("../bench/birch3.data.csv");
+			dkm::clustering_parameters<float> parameters(100);
+			parameters.set_random_seed(42);
+
+			auto serial_res = dkm::kmeans_lloyd(data, parameters);
+			
+			SECTION("Parallel version matches serial version") {
+				auto parallel_res = dkm::kmeans_lloyd_parallel(data, parameters);
+				verify_clustering_results($, serial_res, parallel_res);
+			}
+
+			SECTION("AVX version matches serial version") {
+				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				verify_clustering_results($, serial_res, avx_res);
+			}
+		}
+	},
+
+	CASE("Verify correctness with benchmark dataset: dim128.data.csv",) {
+		SETUP(lest::env& $) {
+			auto data = dkm::load_csv<float, 128>("../bench/dim128.data.csv");
+			dkm::clustering_parameters<float> parameters(16);
+			parameters.set_random_seed(42);
+
+			auto serial_res = dkm::kmeans_lloyd(data, parameters);
+			
+			SECTION("Parallel version matches serial version") {
+				auto parallel_res = dkm::kmeans_lloyd_parallel(data, parameters);
+				verify_clustering_results($, serial_res, parallel_res);
+			}
+
+			SECTION("AVX version matches serial version") {
+				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				verify_clustering_results($, serial_res, avx_res);
 			}
 		}
 	},
@@ -451,5 +718,8 @@ const lest::test specification[] = {
 };
 
 int main(int argc, char** argv) {
-	return lest::run(specification, argc, argv);
+	std::cout << "Starting tests..." << std::endl;
+	int result = lest::run(specification, argc, argv);
+	std::cout << "Tests finished with code: " << result << std::endl;
+	return result;
 }
