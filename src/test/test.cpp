@@ -8,8 +8,8 @@ This is just simple test harness without any external dependencies.
 
 #include "../../include/dkm.hpp"
 #include "../../include/dkm_parallel.hpp"
-// #include "../../include/dkm_thread.hpp"
-#include "../../include/dkm_avx.hpp"
+#include "../../include/dkm_pthread.hpp"
+#include "../../include/dkm_pt_avx.hpp"
 #include "../../include/dkm_utils.hpp"
 #include "lest.hpp"
 
@@ -149,27 +149,8 @@ const lest::test specification[] = {
 				EXPECT(clusters == expected_clusters);
 			}
 
-			// SECTION("K-means calculated correctly via parallel Lloyds method (thread)") {
-			// 	auto means_clusters = dkm::kmeans_lloyd_thread(data, parameters); // 呼叫 Pthread 版本
-			// 	auto means = std::get<0>(means_clusters);
-			// 	auto clusters = std::get<1>(means_clusters);
-
-			// 	EXPECT(means.size() == 3u);
-			// 	EXPECT(clusters.size() == data.size());
-			// 	std::vector<std::array<float, 2>> expected_means{{15.9984f, 23.3856f}, {134.625f, 17.6372f}, {-28.6281f, -11.5276f}};
-			// 	EXPECT(means.size() == 3u);
-			// 	for (size_t i = 0; i < means.size(); ++i) {
-			// 		for (size_t j = 0; j < means[i].size(); ++j) {
-			// 			EXPECT(means[i][j] == lest::approx(expected_means[i][j]));
-			// 		}
-			// 	}
-			// 	std::vector<uint32_t> expected_clusters = { 0, 2, 2, 2, 1, 1, 1, 0, 0, 2, 2, 2, 2, 1, 0, 0, 1};
-			// 	EXPECT(clusters.size() == data.size());
-			// 	EXPECT(clusters == expected_clusters);
-			// }
-
 			SECTION("K-means calculated correctly via parallel Lloyds method (AVX2)") {
-				auto means_clusters = dkm::kmeans_lloyd_avx(data, parameters);
+				auto means_clusters = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				auto means = std::get<0>(means_clusters);
 				auto clusters = std::get<1>(means_clusters);
 				// verify results (will use scalar fallback for N=2, so should be identical)
@@ -204,7 +185,7 @@ const lest::test specification[] = {
 
             SECTION("AVX version produces same result as scalar version") {
                 auto serial_res = dkm::kmeans_lloyd(data, parameters);
-                auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+                auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 
                 auto serial_means = std::get<0>(serial_res);
                 auto avx_means = std::get<0>(avx_res);
@@ -235,7 +216,7 @@ const lest::test specification[] = {
 
 			SECTION("AVX version (N=10) produces same result as scalar version") {
                 auto serial_res = dkm::kmeans_lloyd(data, parameters);
-                auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+                auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 
                 auto serial_means = std::get<0>(serial_res);
                 auto avx_means = std::get<0>(avx_res);
@@ -268,7 +249,7 @@ const lest::test specification[] = {
 
 			SECTION("AVX integer version produces same result as scalar version") {
 				auto serial_res = dkm::kmeans_lloyd(data, parameters);
-				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				
 				auto serial_means = std::get<0>(serial_res);
                 auto avx_means = std::get<0>(avx_res);
@@ -291,7 +272,7 @@ const lest::test specification[] = {
 		SETUP(lest::env& $) {
 			auto data = dkm::load_csv<float, 2>("../bench/iris.data.csv");
 			dkm::clustering_parameters<float> parameters(3);
-			parameters.set_random_seed(42);
+			parameters.set_random_seed(random_seed_value);
 
 			auto serial_res = dkm::kmeans_lloyd(data, parameters);
 			
@@ -300,8 +281,13 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, parallel_res);
 			}
 
+			SECTION("Parallel version (Pthread) matches serial version") {
+				auto pthread_res = dkm::kmeans_lloyd_pt(data, parameters);
+				verify_clustering_results($, serial_res, pthread_res);
+			}
+
 			SECTION("AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				verify_clustering_results($, serial_res, avx_res);
 			}
 		}
@@ -311,7 +297,7 @@ const lest::test specification[] = {
 		SETUP(lest::env& $) {
 			auto data = dkm::load_csv<float, 2>("../bench/s1.data.csv");
 			dkm::clustering_parameters<float> parameters(15);
-			parameters.set_random_seed(42);
+			parameters.set_random_seed(random_seed_value);
 
 			auto serial_res = dkm::kmeans_lloyd(data, parameters);
 			
@@ -320,8 +306,13 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, parallel_res);
 			}
 
+			SECTION("Parallel version (Pthread) matches serial version") {
+				auto pthread_res = dkm::kmeans_lloyd_pt(data, parameters);
+				verify_clustering_results($, serial_res, pthread_res);
+			}
+
 			SECTION("AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				verify_clustering_results($, serial_res, avx_res);
 			}
 		}
@@ -331,7 +322,7 @@ const lest::test specification[] = {
 		SETUP(lest::env& $) {
 			auto data = dkm::load_csv<float, 2>("../bench/birch3.data.csv");
 			dkm::clustering_parameters<float> parameters(100);
-			parameters.set_random_seed(42);
+			parameters.set_random_seed(random_seed_value);
 
 			auto serial_res = dkm::kmeans_lloyd(data, parameters);
 			
@@ -340,8 +331,13 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, parallel_res);
 			}
 
+			SECTION("Parallel version (Pthread) matches serial version") {
+				auto pthread_res = dkm::kmeans_lloyd_pt(data, parameters);
+				verify_clustering_results($, serial_res, pthread_res);
+			}
+
 			SECTION("AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				verify_clustering_results($, serial_res, avx_res);
 			}
 		}
@@ -351,7 +347,7 @@ const lest::test specification[] = {
 		SETUP(lest::env& $) {
 			auto data = dkm::load_csv<float, 128>("../bench/dim128.data.csv");
 			dkm::clustering_parameters<float> parameters(16);
-			parameters.set_random_seed(42);
+			parameters.set_random_seed(random_seed_value);
 
 			auto serial_res = dkm::kmeans_lloyd(data, parameters);
 			
@@ -360,8 +356,13 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, parallel_res);
 			}
 
+			SECTION("Parallel version (Pthread) matches serial version") {
+				auto pthread_res = dkm::kmeans_lloyd_pt(data, parameters);
+				verify_clustering_results($, serial_res, pthread_res);
+			}
+
 			SECTION("AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_avx(data, parameters);
+				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
 				verify_clustering_results($, serial_res, avx_res);
 			}
 		}

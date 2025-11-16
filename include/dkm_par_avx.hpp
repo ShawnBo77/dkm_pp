@@ -25,8 +25,6 @@ namespace details {
 
 /*
 Calculate the square of the distance between two points using AVX2 intrinsics.
-This implementation is optimized for float type and dimensions >= 8.
-For other types or smaller dimensions, it falls back to the scalar implementation.
 */
 template <typename T, size_t N>
 T distance_squared_avx(const std::array<T, N>& point_a, const std::array<T, N>& point_b) {

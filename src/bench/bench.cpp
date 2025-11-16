@@ -6,8 +6,8 @@ This is just simple benchmarking harness without any external dependencies.
 
 #include "../../include/dkm.hpp"
 #include "../../include/dkm_parallel.hpp"
-// #include "../../include/dkm_thread.hpp"
-#include "../../include/dkm_avx.hpp"
+#include "../../include/dkm_pthread.hpp"
+#include "../../include/dkm_pt_avx.hpp"
 #include "../../include/dkm_utils.hpp"
 #include "opencv2/opencv.hpp"
 
@@ -18,6 +18,8 @@ This is just simple benchmarking harness without any external dependencies.
 #include <iostream>
 #include <chrono>
 #include <numeric>
+
+constexpr uint64_t random_seed_value = 7;
 
 template <typename T, size_t N>
 void print_result_dkm(std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>>& result) {
@@ -53,7 +55,7 @@ std::chrono::duration<double> profile_opencv(const cv::Mat& data, int k) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run the bench 10 times and take the average
 	for (int i = 0; i < 10; ++i) {
-		std::cout << "." << std::flush;
+		// std::cout << "." << std::flush;
 		cv::Mat centers, labels;
 		cv::kmeans(
 			data, k, labels, cv::TermCriteria(cv::TermCriteria::EPS, 0, 0.01), 1, cv::KMEANS_PP_CENTERS, centers);
@@ -68,7 +70,7 @@ std::chrono::duration<double> profile_dkm(const std::vector<std::array<T, N>>& d
 	auto start = std::chrono::high_resolution_clock::now();
 	// run the bench 10 times and take the average
 	for (int i = 0; i < 10; ++i) {
-		std::cout << "." << std::flush;
+		// std::cout << "." << std::flush;
 		auto result = dkm::kmeans_lloyd(data, k);
 		(void)result;
 	}
@@ -81,7 +83,7 @@ std::chrono::duration<double> profile_dkm_par(const std::vector<std::array<T, N>
 	auto start = std::chrono::high_resolution_clock::now();
 	// run the bench 10 times and take the average
 	for (int i = 0; i < 10; ++i) {
-		std::cout << "." << std::flush;
+		// std::cout << "." << std::flush;
 		auto result = dkm::kmeans_lloyd_parallel(data, k);
 		(void)result;
 	}
@@ -89,27 +91,31 @@ std::chrono::duration<double> profile_dkm_par(const std::vector<std::array<T, N>
 	return (end - start) / 10.0;
 }
 
-// template <typename T, size_t N>
-// std::chrono::duration<double> profile_dkm_thread(const std::vector<std::array<T, N>>& data, int k) {
-// 	auto start = std::chrono::high_resolution_clock::now();
-// 	// run the bench 10 times and take the average
-// 	for (int i = 0; i < 10; ++i) {
-// 		std::cout << "." << std::flush;
-// 		auto result = dkm::kmeans_lloyd_thread(data, k);
-// 		(void)result;
-// 	}
-// 	auto end = std::chrono::high_resolution_clock::now();
-// 	return (end - start) / 10.0;
-// }
+template <typename T, size_t N>
+std::chrono::duration<double> profile_dkm_pthread(const std::vector<std::array<T, N>>& data, int k, size_t num_thread) {
+	auto start = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < 10; ++i) {
+		// std::cout << "." << std::flush;
+		dkm::clustering_parameters<float> params(k);
+		// parameters.set_random_seed(random_seed_value);
+		params.set_num_threads(num_thread);
+		auto result = dkm::kmeans_lloyd_pt(data, params);
+		(void)result;
+	}
+	auto end = std::chrono::high_resolution_clock::now();
+	return (end - start) / 10.0;
+}
 
 template <typename T, size_t N>
-std::chrono::duration<double> profile_dkm_avx(const std::vector<std::array<T, N>>& data, int k) {
+std::chrono::duration<double> profile_dkm_pt_avx(const std::vector<std::array<T, N>>& data, int k, size_t num_thread) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run the bench 10 times and take the average
 	for (int i = 0; i < 10; ++i) {
-		std::cout << "." << std::flush;
+		// std::cout << "." << std::flush;
 		dkm::clustering_parameters<T> params(k);
-		auto result = dkm::kmeans_lloyd_avx(data, params);
+		// parameters.set_random_seed(random_seed_value);
+		params.set_num_threads(num_thread);
+		auto result = dkm::kmeans_lloyd_pt_avx(data, params);
 		(void)result;
 	}
 	auto end = std::chrono::high_resolution_clock::now();
@@ -118,7 +124,7 @@ std::chrono::duration<double> profile_dkm_avx(const std::vector<std::array<T, N>
 
 template <typename T, size_t N>
 void bench_dataset(const std::string& path, uint32_t k) {
-	std::cout << "## Dataset " << path << " ##" << std::endl;
+	std::cout << "\n## Dataset " << path << " ##" << std::endl;
 	std::chrono::duration<double> time_opencv;
 	if (N == 2) {
 		auto cv_data = load_opencv(path);
@@ -126,26 +132,42 @@ void bench_dataset(const std::string& path, uint32_t k) {
 	}
 
 	auto dkm_data = dkm::load_csv<T, N>(path);
-	auto time_dkm = profile_dkm(dkm_data, k);
-	auto time_dkm_par = profile_dkm_par(dkm_data, k);
-	// auto time_dkm_thread = profile_dkm_thread(dkm_data, k);
-	auto time_dkm_avx = profile_dkm_avx(dkm_data, k);
-	std::cout << "\n";
-	std::cout << "DKM: " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_dkm).count()
+	std::cout << "........................................\n";
+	
+	// serial
+	auto time = profile_dkm(dkm_data, k);
+	std::cout << "DKM: " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
 			  << "ms" << std::endl;
-	std::cout << "DKM parallel: " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_dkm_par).count()
+
+	// openmp
+	time = profile_dkm_par(dkm_data, k);
+	std::cout << "DKM parallel: " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
 			  << "ms" << std::endl;
-	// std::cout << "DKM (thread): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_dkm_thread).count()
-	// 		  << "ms" << std::endl;
-	std::cout << "DKM parallel (AVX2): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_dkm_avx).count()
+	
+	// pthread 
+	std::cout << "DKM (Pthread):" << std::endl;
+    for (uint32_t t = 1; t <= std::thread::hardware_concurrency(); ++t) {
+        time = profile_dkm_pthread(dkm_data, k, t);
+		std::cout << " - " << t << " thread(s): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
 			  << "ms" << std::endl;
-	std::cout << "OpenCV: ";
-	if (N == 2) {
-		std::cout << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_opencv).count() << "ms";
-	} else {
-		std::cout << "---";
-	}
-	std::cout << "\n" << std::endl;
+    }
+
+	// pthread + AVX2
+	std::cout << "DKM (Pthread + AVX2):" << std::endl;
+    for (uint32_t t = 1; t <= std::thread::hardware_concurrency(); ++t) {
+        time = profile_dkm_pt_avx(dkm_data, k, t);
+		std::cout << " - " << t << " thread(s): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
+			  << "ms" << std::endl;
+    }
+	
+	// OpenCV
+	// std::cout << "OpenCV: ";
+	// if (N == 2) {
+	// 	std::cout << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time_opencv).count() << "ms";
+	// } else {
+	// 	std::cout << "---";
+	// }
+	// std::cout << "\n" << std::endl;
 }
 
 int main() {

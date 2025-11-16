@@ -205,7 +205,8 @@ public:
 	_k(k),
 	_has_max_iter(false), _max_iter(),
 	_has_min_delta(false), _min_delta(),
-	_has_rand_seed(false), _rand_seed()
+	_has_rand_seed(false), _rand_seed(),
+	_has_num_threads(false), _num_threads()
 	{}
 
 	void set_max_iteration(uint64_t max_iter)
@@ -226,14 +227,22 @@ public:
 		_has_rand_seed = true;
 	}
 
+	void set_num_threads(uint32_t num_threads)
+	{
+		_num_threads = num_threads;
+		_has_num_threads = true;
+	}
+
 	bool has_max_iteration() const { return _has_max_iter; }
 	bool has_min_delta() const { return _has_min_delta; }
 	bool has_random_seed() const { return _has_rand_seed; }
+	bool has_num_threads() const { return _has_num_threads; }
 
 	uint32_t get_k() const { return _k; };
 	uint64_t get_max_iteration() const { return _max_iter; }
 	T get_min_delta() const { return _min_delta; }
 	uint64_t get_random_seed() const { return _rand_seed; }
+	uint32_t get_num_threads() const { return _num_threads; }
 
 private:
 	uint32_t _k;
@@ -243,6 +252,8 @@ private:
 	T _min_delta;
 	bool _has_rand_seed;
 	uint64_t _rand_seed;
+	bool _has_num_threads;
+	uint32_t _num_threads;
 };
 
 /*
