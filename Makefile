@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -O3 -I./include -march=native -mavx2
+CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I./include -mavx2 -mfma
 LDFLAGS := -lpthread
 
 # OpenMP flag
@@ -45,11 +45,16 @@ all: build
 # Alias for the 'all' target for clarity
 build: $(BENCH_BUILD_TARGET) $(TEST_BUILD_TARGET)
 
-# === Benchmark Targets ===
-# 'make bench' will now compile and run the benchmark
-bench: $(BENCH_BUILD_TARGET)
-	@echo "\n=== Running Benchmark ==="
+prepare-data:
+	@echo "Preparing data and directories..."
+	@mkdir -p $(BENCH_TARGET_DIR) $(TEST_TARGET_DIR)
 	@cp $(BENCH_SRC_DIR)/*.csv $(BENCH_TARGET_DIR)/ 2>/dev/null || :
+	@cp $(TEST_SRC_DIR)/*.csv $(TEST_TARGET_DIR)/ 2>/dev/null || :
+
+# === Benchmark Targets ===
+# 'make bench' will compile and run the benchmark
+bench: $(BENCH_BUILD_TARGET) prepare-data
+	@echo "\n=== Running Benchmark ==="
 	@cd $(BENCH_TARGET_DIR) && ./$(notdir $(BENCH_BUILD_TARGET))
 
 # Rule to link the benchmark executable
@@ -66,11 +71,9 @@ $(BENCH_OBJ_DIR)/%.o: $(BENCH_SRC_DIR)/%.cpp
 
 
 # === Test Targets ===
-# 'make test' will now compile and run the tests
-test: $(TEST_BUILD_TARGET)
+# 'make test' will compile and run the tests
+test: $(TEST_BUILD_TARGET) prepare-data
 	@echo "\n=== Running Tests ==="
-	@cp $(TEST_SRC_DIR)/*.csv $(TEST_TARGET_DIR)/ 2>/dev/null || :
-# 	@cp $(BENCH_SRC_DIR)/*.csv $(TEST_TARGET_DIR)/ 2>/dev/null || :
 	@cd $(TEST_TARGET_DIR) && ./$(notdir $(TEST_BUILD_TARGET))
 
 # Rule to link the test executable

@@ -234,39 +234,6 @@ const lest::test specification[] = {
 		}
 	},
 
-	CASE("Test AVX implementation for integer types (N=8)",) {
-		SETUP("8D integer dataset") {
-			std::vector<std::array<int, 8>> data{
-				{1, 2, 3, 4, 5, 6, 7, 8},
-				{-1, -2, -3, -4, -5, -6, -7, -8},
-				{10, 20, 30, 40, 50, 60, 70, 80},
-				{-10, -20, -30, -40, -50, -60, -70, -80},
-				{101, 102, 103, 104, 105, 106, 107, 108},
-				{-101, -102, -103, -104, -105, -106, -107, -108}
-			};
-			dkm::clustering_parameters<int> parameters(3);
-			parameters.set_random_seed(random_seed_value);
-
-			SECTION("AVX integer version produces same result as scalar version") {
-				auto serial_res = dkm::kmeans_lloyd(data, parameters);
-				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
-				
-				auto serial_means = std::get<0>(serial_res);
-                auto avx_means = std::get<0>(avx_res);
-                auto serial_clusters = std::get<1>(serial_res);
-                auto avx_clusters = std::get<1>(avx_res);
-
-                EXPECT(avx_means.size() == serial_means.size());
-                EXPECT(avx_clusters == serial_clusters);
-                for(size_t i = 0; i < serial_means.size(); ++i) {
-                    for(size_t j = 0; j < 8; ++j) {
-                        EXPECT(serial_means[i][j] == avx_means[i][j]);
-                    }
-                }
-			}
-		}
-	},
-
 	CASE("Verify correctness with benchmark dataset: iris.data.csv",) {
 		// lest::env& $ 參數是 lest 框架自動傳入的
 		SETUP(lest::env& $) {

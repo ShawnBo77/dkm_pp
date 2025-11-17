@@ -71,7 +71,9 @@ std::chrono::duration<double> profile_dkm(const std::vector<std::array<T, N>>& d
 	// run the bench 10 times and take the average
 	for (int i = 0; i < 10; ++i) {
 		// std::cout << "." << std::flush;
-		auto result = dkm::kmeans_lloyd(data, k);
+		dkm::clustering_parameters<float> params(k);
+		params.set_random_seed(random_seed_value);
+		auto result = dkm::kmeans_lloyd(data, params);
 		(void)result;
 	}
 	auto end = std::chrono::high_resolution_clock::now();
@@ -97,7 +99,7 @@ std::chrono::duration<double> profile_dkm_pthread(const std::vector<std::array<T
 	for (int i = 0; i < 10; ++i) {
 		// std::cout << "." << std::flush;
 		dkm::clustering_parameters<float> params(k);
-		// parameters.set_random_seed(random_seed_value);
+		params.set_random_seed(random_seed_value);
 		params.set_num_threads(num_thread);
 		auto result = dkm::kmeans_lloyd_pt(data, params);
 		(void)result;
@@ -113,7 +115,7 @@ std::chrono::duration<double> profile_dkm_pt_avx(const std::vector<std::array<T,
 	for (int i = 0; i < 10; ++i) {
 		// std::cout << "." << std::flush;
 		dkm::clustering_parameters<T> params(k);
-		// parameters.set_random_seed(random_seed_value);
+		params.set_random_seed(random_seed_value);
 		params.set_num_threads(num_thread);
 		auto result = dkm::kmeans_lloyd_pt_avx(data, params);
 		(void)result;
@@ -146,7 +148,7 @@ void bench_dataset(const std::string& path, uint32_t k) {
 	
 	// pthread 
 	std::cout << "DKM (Pthread):" << std::endl;
-    for (uint32_t t = 1; t <= std::thread::hardware_concurrency(); ++t) {
+    for (uint32_t t = 2; t <= 8; ++t) {
         time = profile_dkm_pthread(dkm_data, k, t);
 		std::cout << " - " << t << " thread(s): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
 			  << "ms" << std::endl;
@@ -154,7 +156,7 @@ void bench_dataset(const std::string& path, uint32_t k) {
 
 	// pthread + AVX2
 	std::cout << "DKM (Pthread + AVX2):" << std::endl;
-    for (uint32_t t = 1; t <= std::thread::hardware_concurrency(); ++t) {
+    for (uint32_t t = 2; t <= 8; ++t) {
         time = profile_dkm_pt_avx(dkm_data, k, t);
 		std::cout << " - " << t << " thread(s): " << std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(time).count()
 			  << "ms" << std::endl;
