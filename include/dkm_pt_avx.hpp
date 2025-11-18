@@ -206,28 +206,39 @@ void* worker_closest_mean_avx_2d_float(void* arg) {
 			pregen_means[m] = _mm256_setr_ps(mx, my, mx, my, mx, my, mx, my);
 		}
 
-        // 開頭沒對齊的部分
-		while (i < end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 != 0)) {
+
+        /*沒align是因為請求記憶體的頭剛好不是 32 的倍數，
+        但一個 float 4 bytes，array 和 vector 在分配記憶體會遵守對齊要求，
+        std::array<float, 2> 的對齊要求是 4 的倍數，vector 會看他包含的元素的對齊要求，
+        所以std::vector<std::array<float, 2>> 的 BaseAddress 至少是 4 的倍數。
+        因為std::array<float, 2> 是 8 bytes，如果 BaseAddress 是 8 的倍數，
+        前 3 筆資料內一定會對齊(地址為 32 的倍數)，沒有的話就直接用 align 的資料跑 AVX*/
+        // 在開頭最多 4 個元素內尋找對齊位址
+		const size_t alignment_search_end = std::min(end, a->begin + 4);
+		while (i < alignment_search_end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 != 0)) {
 			clusters[i] = closest_mean(data[i], means);
 			i++;
 		}
 
-		// 對齊的 AVX 計算
-		for (; i + 3 < end; i += 4) {
-			// 對齊載入 4 個點的資料
-			__m256 points_vec = _mm256_load_ps(reinterpret_cast<const float*>(&data[i]));
-			// 計算 4 個點最近的 mean
-			__m128i final_indices_128 = find_closest_means_2d_avx_block_align(points_vec, pregen_means, num_means);
-			// 將結果儲存回記憶體
-			_mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), final_indices_128);
+		// 根據是否找到對齊位址，選擇不同的 AVX 核心迴圈
+		if (i < end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 == 0)) {
+			// 找到對齊位址
+			for (; i + 3 < end; i += 4) {
+                // 對齊載入 4 個點的資料
+				__m256 points_vec = _mm256_load_ps(reinterpret_cast<const float*>(&data[i]));
+                // 計算 4 個點最近的 mean
+				__m128i final_indices_128 = find_closest_means_2d_avx_block_align(points_vec, pregen_means, num_means);
+				// 將結果儲存回記憶體
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), final_indices_128);
+			}
+		} else {
+			// 未找到對齊位址
+			for (; i + 3 < end; i += 4) {
+			    __m128i result = find_closest_means_2d_avx_block(
+			        reinterpret_cast<const float*>(&data[i]), pregen_means, num_means);
+			    _mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), result);
+			}
 		}
-
-		// 全部沒對齊
-		// for (; i + 3 < end; i += 4) {
-		//     __m128i result = find_closest_means_2d_avx_block(
-		//         reinterpret_cast<const float*>(&data[i]), pregen_means, num_means);
-		//     _mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), result);
-		// }
 
 		// 剩餘部分
 		for (; i < end; ++i) {
