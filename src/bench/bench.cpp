@@ -172,12 +172,66 @@ void bench_dataset(const std::string& path, uint32_t k) {
 	// std::cout << "\n" << std::endl;
 }
 
+template <typename T, size_t N>
+void bench_calculate_means(const std::string& dataset_name, const std::vector<std::array<T, N>>& data, uint32_t k) {
+	std::cout << "\n## Benchmarking calculate_means for: " << dataset_name << " ##" << std::endl;
+	std::cout << "Data points: " << data.size() << ", Dimensions: " << N << ", Clusters: " << k << std::endl;
+
+	auto initial_means = dkm::details::random_plusplus(data, k, random_seed_value);
+
+	auto clusters = dkm::details::calculate_clusters(data, initial_means);
+	
+	std::vector<std::array<T, N>> old_means(k); 
+
+	// 設定 benchmark 參數
+	const int iterations = 10000;
+
+	// 測試 dkm::details::calculate_means (原始版本，來自 dkm.hpp)
+	auto start_orig = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < iterations; ++i) {
+		auto result = dkm::details::calculate_means(data, clusters, old_means, k);
+		(void)result; 
+	}
+	auto end_orig = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> time_orig = (end_orig - start_orig) / iterations;
+	std::cout << "Original calculate_means: " << time_orig.count() << " ms" << std::endl;
+
+
+	// 測試 dkm::details::calculate_means_avx (AVX 版本，來自 dkm_pt_avx.hpp)
+	auto start_avx = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < iterations; ++i) {
+		auto result = dkm::details::calculate_means_avx(data, clusters, old_means, k);
+		(void)result;
+	}
+	auto end_avx = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double, std::milli> time_avx = (end_avx - start_avx) / iterations;
+	std::cout << "AVX calculate_means_avx:  " << time_avx.count() << " ms" << std::endl;
+
+	double speedup = time_orig.count() / time_avx.count();
+	std::cout.precision(2);
+	std::cout << "Speedup: " << std::fixed << speedup << "x" << std::endl;
+    std::cout << "........................................" << std::endl;
+}
+
 int main() {
 	std::cout << "# BEGINNING PROFILING #\n" << std::endl;
 	bench_dataset<float, 2>("iris.data.csv", 3);
 	bench_dataset<float, 2>("s1.data.csv", 15);
 	bench_dataset<float, 2>("birch3.data.csv", 100);
 	bench_dataset<float, 128>("dim128.data.csv", 16);
+
+
+	// auto data_iris = dkm::load_csv<float, 2>("iris.data.csv");
+	// bench_calculate_means("iris (N=2)", data_iris, 3);
+
+	// auto data_s1 = dkm::load_csv<float, 2>("s1.data.csv");
+	// bench_calculate_means("s1 (N=2)", data_s1, 15);
+
+	// auto data_birch3 = dkm::load_csv<float, 2>("birch3.data.csv");
+	// bench_calculate_means("birch3 (N=128)", data_birch3, 100);
+	
+	// auto data_dim128 = dkm::load_csv<float, 128>("dim128.data.csv");
+	// bench_calculate_means("dim128 (N=128)", data_dim128, 16);
 
 	return 0;
 }

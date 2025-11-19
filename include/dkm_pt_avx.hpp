@@ -207,13 +207,13 @@ void* worker_closest_mean_avx_2d_float(void* arg) {
 		}
 
 
-        /*沒align是因為請求記憶體的頭剛好不是 32 的倍數，
-        但一個 float 4 bytes，array 和 vector 在分配記憶體會遵守對齊要求，
-        std::array<float, 2> 的對齊要求是 4 的倍數，vector 會看他包含的元素的對齊要求，
-        所以std::vector<std::array<float, 2>> 的 BaseAddress 至少是 4 的倍數。
-        因為std::array<float, 2> 是 8 bytes，如果 BaseAddress 是 8 的倍數，
-        前 3 筆資料內一定會對齊(地址為 32 的倍數)，沒有的話就直接用 align 的資料跑 AVX*/
-        // 在開頭最多 4 個元素內尋找對齊位址
+		/*沒align是因為請求記憶體的頭剛好不是 32 的倍數，
+		但一個 float 4 bytes，array 和 vector 在分配記憶體會遵守對齊要求，
+		std::array<float, 2> 的對齊要求是 4 的倍數，vector 會看他包含的元素的對齊要求，
+		所以std::vector<std::array<float, 2>> 的 BaseAddress 至少是 4 的倍數。
+		因為std::array<float, 2> 是 8 bytes，如果 BaseAddress 是 8 的倍數，
+		前 3 筆資料內一定會對齊(地址為 32 的倍數)，沒有的話就直接用 align 的資料跑 AVX*/
+		// 在開頭最多 4 個元素內尋找對齊位址
 		const size_t alignment_search_end = std::min(end, a->begin + 4);
 		while (i < alignment_search_end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 != 0)) {
 			clusters[i] = closest_mean(data[i], means);
@@ -224,19 +224,19 @@ void* worker_closest_mean_avx_2d_float(void* arg) {
 		if (i < end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 == 0)) {
 			// 找到對齊位址
 			for (; i + 3 < end; i += 4) {
-                // 對齊載入 4 個點的資料
+				// 對齊載入 4 個點的資料
 				__m256 points_vec = _mm256_load_ps(reinterpret_cast<const float*>(&data[i]));
-                // 計算 4 個點最近的 mean
+				// 計算 4 個點最近的 mean
 				__m128i final_indices_128 = find_closest_means_2d_avx_block_align(points_vec, pregen_means, num_means);
 				// 將結果儲存回記憶體
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), final_indices_128);
+				_mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), final_indices_128);
 			}
 		} else {
 			// 未找到對齊位址
 			for (; i + 3 < end; i += 4) {
-			    __m128i result = find_closest_means_2d_avx_block(
-			        reinterpret_cast<const float*>(&data[i]), pregen_means, num_means);
-			    _mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), result);
+				__m128i result =
+					find_closest_means_2d_avx_block(reinterpret_cast<const float*>(&data[i]), pregen_means, num_means);
+				_mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), result);
 			}
 		}
 
@@ -439,6 +439,57 @@ std::vector<uint32_t> calculate_clusters_pt_avx(const std::vector<std::array<T, 
 	return clusters;
 }
 
+template <typename T, size_t N>
+std::vector<std::array<T, N>> calculate_means_avx(const std::vector<std::array<T, N>>& data,
+	const std::vector<uint32_t>& clusters,
+	const std::vector<std::array<T, N>>& old_means,
+	uint32_t k) {
+	if constexpr (std::is_same_v<T, float> && N >= 8) {
+		// Accumulation
+		std::vector<std::array<T, N>> means(k);
+		std::vector<T> counts(k, T(0));
+		for (size_t i = 0; i < data.size(); ++i) {
+			const uint32_t cluster_idx = clusters[i];
+			counts[cluster_idx] += 1;
+			auto& mean = means[cluster_idx];
+			const auto& point = data[i];
+
+			size_t j = 0;
+			for (; j + 7 < N; j += 8) {
+				__m256 mean_vec = _mm256_loadu_ps(&mean[j]);
+				__m256 point_vec = _mm256_loadu_ps(&point[j]);
+				__m256 sum_vec = _mm256_add_ps(mean_vec, point_vec);
+				_mm256_storeu_ps(&mean[j], sum_vec);
+			}
+			for (; j < N; ++j) {
+				mean[j] += point[j];
+			}
+		}
+
+		// Averaging
+		for (uint32_t i = 0; i < k; ++i) {
+			if (counts[i] == 0) {
+				means[i] = old_means[i];
+			} else {
+				__m256 count_vec = _mm256_set1_ps(static_cast<float>(counts[i]));
+				size_t j = 0;
+				for (; j + 7 < N; j += 8) {
+					__m256 mean_vec = _mm256_loadu_ps(&means[i][j]);
+					__m256 avg_vec = _mm256_div_ps(mean_vec, count_vec);
+					_mm256_storeu_ps(&means[i][j], avg_vec);
+				}
+				for (; j < N; ++j) {
+					means[i][j] /= counts[i];
+				}
+			}
+		}
+		return means;
+
+	} else {
+		return dkm::details::calculate_means(data, clusters, old_means, k);
+	}
+}
+
 
 } // namespace details
 
@@ -467,7 +518,7 @@ std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt
 		clusters = details::calculate_clusters_pt_avx<T, N>(data, means, parameters);
 		old_old_means = old_means;
 		old_means = means;
-		means = details::calculate_means<T, N>(data, clusters, old_means, parameters.get_k());
+		means = details::calculate_means_avx<T, N>(data, clusters, old_means, parameters.get_k());
 		++count;
 	} while ((means != old_means && means != old_old_means)
 		&& !(parameters.has_max_iteration() && count == parameters.get_max_iteration())
