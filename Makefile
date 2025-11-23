@@ -22,10 +22,12 @@ TEST_TARGET_DIR := $(BUILD_DIR)/test
 
 # Target executables (internal build targets)
 BENCH_BUILD_TARGET := $(BENCH_TARGET_DIR)/bench
+BENCH_ALL_TARGET := $(BENCH_TARGET_DIR)/bench_all
 TEST_BUILD_TARGET := $(TEST_TARGET_DIR)/test
 
 # Source files
 BENCH_SOURCES := $(BENCH_SRC_DIR)/bench.cpp
+BENCH_ALL_SOURCES := $(BENCH_SRC_DIR)/bench_all.cpp
 TEST_SOURCES := $(TEST_SRC_DIR)/test.cpp
 
 # Object files directories
@@ -34,6 +36,7 @@ TEST_OBJ_DIR := $(TEST_TARGET_DIR)/obj
 
 # Generate object file names from source files
 BENCH_OBJECTS := $(patsubst $(BENCH_SRC_DIR)/%.cpp, $(BENCH_OBJ_DIR)/%.o, $(BENCH_SOURCES))
+BENCH_ALL_OBJECTS := $(patsubst $(BENCH_SRC_DIR)/%.cpp, $(BENCH_OBJ_DIR)/%.o, $(BENCH_ALL_SOURCES))
 TEST_OBJECTS := $(patsubst $(TEST_SRC_DIR)/%.cpp, $(TEST_OBJ_DIR)/%.o, $(TEST_SOURCES))
 
 # Phony targets (targets that are not files)
@@ -43,7 +46,7 @@ TEST_OBJECTS := $(patsubst $(TEST_SRC_DIR)/%.cpp, $(TEST_OBJ_DIR)/%.o, $(TEST_SO
 all: build
 
 # Alias for the 'all' target for clarity
-build: $(BENCH_BUILD_TARGET) $(TEST_BUILD_TARGET)
+build: $(BENCH_BUILD_TARGET) $(BENCH_ALL_TARGET) $(TEST_BUILD_TARGET)
 
 prepare-data:
 	@echo "Preparing data and directories..."
@@ -52,7 +55,7 @@ prepare-data:
 	@cp $(TEST_SRC_DIR)/*.csv $(TEST_TARGET_DIR)/ 2>/dev/null || :
 
 # === Benchmark Targets ===
-# 'make bench' will compile and run the benchmark
+# 'make bench' will compile and run the benchmark of bench
 bench: $(BENCH_BUILD_TARGET) prepare-data
 	@echo "\n=== Running Benchmark ==="
 	@cd $(BENCH_TARGET_DIR) && ./$(notdir $(BENCH_BUILD_TARGET))
@@ -63,12 +66,22 @@ $(BENCH_BUILD_TARGET): $(BENCH_OBJECTS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(OMP_FLAG) $^ -o $@ $(LDFLAGS) $(OPENCV_LIBS)
 
+# 'make bench-all' will compile and run the benchmark of bench_all
+bench-all: $(BENCH_ALL_TARGET) prepare-data
+	@echo "\n=== Running All Benchmarks ==="
+	@cd $(BENCH_TARGET_DIR) && ./$(notdir $(BENCH_ALL_TARGET))
+
+# Rule to link the bench_all executable
+$(BENCH_ALL_TARGET): $(BENCH_ALL_OBJECTS)
+	@echo "Linking bench_all executable: $@"
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
 # Rule to compile benchmark source
 $(BENCH_OBJ_DIR)/%.o: $(BENCH_SRC_DIR)/%.cpp
 	@echo "Compiling benchmark source: $<"
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(OMP_FLAG) $(OPENCV_CFLAGS) -MMD -MP -c $< -o $@
-
 
 # === Test Targets ===
 # 'make test' will compile and run the tests
@@ -91,6 +104,7 @@ $(TEST_OBJ_DIR)/%.o: $(TEST_SRC_DIR)/%.cpp
 
 # Include the generated dependency files
 -include $(BENCH_OBJECTS:.o=.d)
+-include $(BENCH_ALL_OBJECTS:.o=.d)
 -include $(TEST_OBJECTS:.o=.d)
 
 
@@ -108,6 +122,7 @@ help:
 	@echo ""
 	@echo "Primary Run Targets:"
 	@echo "  bench      Compile and run the benchmark."
+	@echo "  bench-all   Compile and run the new, comprehensive benchmark."
 	@echo "  test       Compile and run the tests."
 	@echo "  run        Compile and run both the benchmark and the tests."
 	@echo ""

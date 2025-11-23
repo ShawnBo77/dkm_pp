@@ -6,15 +6,26 @@ Test cases for dkm.hpp
 This is just simple test harness without any external dependencies.
 */
 
+// Include all dkm headers to be tested
 #include "../../include/dkm.hpp"
-#include "../../include/dkm_parallel.hpp"
-#include "../../include/dkm_pthread.hpp"
-#include "../../include/dkm_thread_pool.hpp"
-#include "../../include/dkm_thread_pool_v2.hpp"
-#include "../../include/dkm_pt_avx.hpp"
-#include "../../include/dkm_tp_avx.hpp"
-#include "../../include/dkm_tp_v2_avx.hpp"
 #include "../../include/dkm_utils.hpp"
+#include "../../include/dkm_parallel.hpp"
+// Pthread variants
+#include "../../include/dkm_pthread.hpp"
+#include "../../include/dkm_pt_avx.hpp"
+#include "../../include/dkm_pt_avx_unalign.hpp"
+#include "../../include/dkm_pt_avx_prealign.hpp"
+// ThreadPool V1 variants
+#include "../../include/dkm_thread_pool.hpp"
+#include "../../include/dkm_tp_avx.hpp"
+#include "../../include/dkm_tp_avx_unalign.hpp"
+#include "../../include/dkm_tp_avx_prealign.hpp"
+// ThreadPool V2 variants
+#include "../../include/dkm_thread_pool_v2.hpp"
+#include "../../include/dkm_tp_v2_avx.hpp"
+#include "../../include/dkm_tp_v2_avx_unalign.hpp"
+#include "../../include/dkm_tp_v2_avx_prealign.hpp"
+
 #include "lest.hpp"
 
 #include <vector>
@@ -257,9 +268,39 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
+			SECTION("Pthread + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
 			SECTION("Thread Pool version matches serial version") {
 				auto pthread_res = dkm::kmeans_lloyd_tp(data, parameters);
 				verify_clustering_results($, serial_res, pthread_res);
+			}
+
+			SECTION("Thread Pool + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
 			SECTION("Thread Pool V2 version matches serial version") {
@@ -267,19 +308,19 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
-			SECTION("Pthread + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
-			SECTION("Thread Pool + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
-			SECTION("Thread Pool v2 + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 		}
 	},
@@ -302,9 +343,39 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
+			SECTION("Pthread + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
 			SECTION("Thread Pool version matches serial version") {
 				auto pthread_res = dkm::kmeans_lloyd_tp(data, parameters);
 				verify_clustering_results($, serial_res, pthread_res);
+			}
+
+			SECTION("Thread Pool + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
 			SECTION("Thread Pool V2 version matches serial version") {
@@ -312,19 +383,19 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
-			SECTION("Pthread + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
-			SECTION("Thread Pool + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
-
-			SECTION("Thread Pool v2 + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			
+			SECTION("Thread Pool V2 + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 		}
 	},
@@ -347,9 +418,39 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
+			SECTION("Pthread + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
 			SECTION("Thread Pool version matches serial version") {
 				auto pthread_res = dkm::kmeans_lloyd_tp(data, parameters);
 				verify_clustering_results($, serial_res, pthread_res);
+			}
+
+			SECTION("Thread Pool + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
 			SECTION("Thread Pool V2 version matches serial version") {
@@ -357,19 +458,19 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
-			SECTION("Pthread + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
-			SECTION("Thread Pool + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
-
-			SECTION("Thread Pool v2 + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			
+			SECTION("Thread Pool V2 + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 		}
 	},
@@ -391,10 +492,40 @@ const lest::test specification[] = {
 				auto pthread_res = dkm::kmeans_lloyd_pt(data, parameters);
 				verify_clustering_results($, serial_res, pthread_res);
 			}
-			
+
+			SECTION("Pthread + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Pthread + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_pt_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
 			SECTION("Thread Pool version matches serial version") {
 				auto pthread_res = dkm::kmeans_lloyd_tp(data, parameters);
 				verify_clustering_results($, serial_res, pthread_res);
+			}
+
+			SECTION("Thread Pool + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
+			}
+
+			SECTION("Thread Pool + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
 			SECTION("Thread Pool V2 version matches serial version") {
@@ -402,19 +533,19 @@ const lest::test specification[] = {
 				verify_clustering_results($, serial_res, pthread_res);
 			}
 
-			SECTION("Pthread + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_pt_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 
-			SECTION("Thread Pool + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			SECTION("Thread Pool V2 + AVX (Unalign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_unalign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
-
-			SECTION("Thread Pool v2 + AVX version matches serial version") {
-				auto avx_res = dkm::kmeans_lloyd_tp_v2_avx(data, parameters);
-				verify_clustering_results($, serial_res, avx_res);
+			
+			SECTION("Thread Pool V2 + AVX (Prealign) version matches serial version") {
+				auto res = dkm::kmeans_lloyd_tp_v2_avx_prealign(data, parameters);
+				verify_clustering_results($, serial_res, res);
 			}
 		}
 	},

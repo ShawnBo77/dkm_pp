@@ -43,7 +43,8 @@ std::vector<T> closest_distance_tp_v2(const std::vector<std::array<T, N>>& means
 	size_t nthr = determine_num_threads(parameters);
 
 	// static ThreadPool：只建立於首次執行時
-	static ThreadPool pool(nthr); // nthr
+	static ThreadPool pool;
+	pool.reset(nthr); // nthr
 
 	size_t points_per_block = block_size / N;
 	if (points_per_block == 0)
@@ -125,7 +126,8 @@ std::vector<uint32_t> calculate_clusters_tp_v2(const std::vector<std::array<T, N
 
 	size_t nthr = determine_num_threads(parameters);
 
-	static ThreadPool pool(nthr); // nthr
+	static ThreadPool pool;
+	pool.reset(nthr); // nthr
 
 	size_t points_per_block = block_size / N;
 	if (points_per_block == 0)

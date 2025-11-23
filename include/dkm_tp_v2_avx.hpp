@@ -33,7 +33,8 @@ std::vector<T> closest_distance_tp_v2_avx(const std::vector<std::array<T, N>>& m
 		return distances;
 
 	size_t nthr = determine_num_threads(parameters);
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 
 	size_t points_per_block = block_size / N;
 	if (points_per_block == 0)
@@ -101,7 +102,8 @@ std::vector<uint32_t> calculate_clusters_tp_v2_avx(const std::vector<std::array<
 		return clusters;
 
 	size_t nthr = determine_num_threads(parameters);
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 
 	size_t points_per_block = block_size / N;
 	if (points_per_block == 0)

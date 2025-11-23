@@ -103,7 +103,8 @@ std::vector<T> closest_distance_tp_avx(const std::vector<std::array<T, N>>& mean
 
 	size_t nthr = determine_num_threads(parameters);
 
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 	const size_t chunk = (n + nthr - 1) / nthr;
 	std::vector<details::ThreadArgs<T, N>> args(nthr);
 
@@ -185,7 +186,8 @@ std::vector<uint32_t> calculate_clusters_tp_avx(const std::vector<std::array<T, 
 
 	size_t nthr = determine_num_threads(parameters);
 
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 	const size_t chunk = (n + nthr - 1) / nthr;
 	std::vector<details::ThreadArgs<T, N>> args(nthr);
 

@@ -38,7 +38,8 @@ std::vector<T> closest_distance_tp(const std::vector<std::array<T, N>>& means,
 	size_t nthr = determine_num_threads(parameters);
 
 	// static ThreadPool：只建立於首次執行時
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 	const size_t chunk = (n + nthr - 1) / nthr;
 	std::vector<ThreadArgs<T, N>> args(nthr);
 
@@ -110,7 +111,8 @@ std::vector<uint32_t> calculate_clusters_tp(const std::vector<std::array<T, N>>&
 	size_t nthr = determine_num_threads(parameters);
 
 	// static ThreadPool：只建立於首次執行時
-	static ThreadPool pool(nthr);
+	static ThreadPool pool;
+	pool.reset(nthr);
 
 	const size_t chunk = (n + nthr - 1) / nthr;
 	std::vector<ThreadArgs<T, N>> args(nthr);

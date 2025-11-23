@@ -13,6 +13,8 @@
 
 class ThreadPool {
 public:
+    ThreadPool() : ThreadPool(sysconf(_SC_NPROCESSORS_ONLN) > 0 ? sysconf(_SC_NPROCESSORS_ONLN) : 1) {}
+
     explicit ThreadPool(size_t nthreads) : stop(false), active_tasks(0) {
         workers.resize(nthreads);
         for (size_t i = 0; i < nthreads; ++i) {
@@ -27,6 +29,38 @@ public:
             cv_task.notify_all();
         }
         for (auto& t : workers) pthread_join(t, nullptr);
+    }
+
+    void reset(size_t new_nthreads) {
+        if (new_nthreads == 0) new_nthreads = 1;
+
+        if (new_nthreads == workers.size() && !stop) {
+            return;
+        }
+
+        // Cleanly shut down existing workers
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            stop = true;
+            cv_task.notify_all();
+        }
+        for (auto& t : workers) {
+            pthread_join(t, nullptr);
+        }
+
+        // Re-initialize with the new number of threads
+        workers.clear();
+        workers.resize(new_nthreads);
+
+        std::queue<std::function<void()>> empty_queue;
+        tasks.swap(empty_queue);
+
+        stop = false;
+        active_tasks = 0;
+
+        for (size_t i = 0; i < new_nthreads; ++i) {
+            pthread_create(&workers[i], nullptr, ThreadPool::worker_entry, this);
+        }
     }
 
     // 放入任務
