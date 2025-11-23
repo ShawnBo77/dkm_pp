@@ -1,9 +1,11 @@
 #pragma once
-#ifndef DKM_PTHREAD_AVX_KMEANS_H
-#define DKM_PTHREAD_AVX_KMEANS_H
+#ifndef DKM_THREAD_POOL_AVX_KMEANS_H
+#define DKM_THREAD_POOL_AVX_KMEANS_H
 
+#include "ThreadPool.hpp"
 #include "dkm.hpp"
 #include "dkm_avx_utils.hpp"
+#include "dkm_pthread.hpp"
 #include "dkm_thread_utils.hpp"
 #include <algorithm>
 #include <array>
@@ -12,7 +14,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <immintrin.h>
-#include <pthread.h>
 #include <random>
 #include <thread>
 #include <tuple>
@@ -20,17 +21,16 @@
 #include <vector>
 
 /*
-DKM - pthread 與 AVX2 整合
-使用 pthread 進行平行化處理，並在計算距離時使用 AVX2 SIMD 指令集加速。
+DKM - Thread Pool 與 AVX2 整合
+使用 Thread Pool 進行平行化處理，並在計算距離時使用 AVX2 SIMD 指令集加速。
 */
 namespace dkm {
 
 namespace details {
 
 template <typename T, size_t N>
-void* worker_closest_mean_avx_2d_float(void* arg) {
+void worker_closest_mean_avx_2d_float(details::ThreadArgs<T, N>* a) {
 	if constexpr (N == 2 && std::is_same_v<T, float>) {
-		auto* a = static_cast<details::ThreadArgs<T, N>*>(arg);
 		const auto& data = *a->data;
 		const auto& means = *a->means;
 		auto& clusters = *a->clusters;
@@ -45,33 +45,19 @@ void* worker_closest_mean_avx_2d_float(void* arg) {
 			pregen_means[m] = _mm256_setr_ps(mx, my, mx, my, mx, my, mx, my);
 		}
 
-
-		/*沒align是因為請求記憶體的頭剛好不是 32 的倍數，
-		但一個 float 4 bytes，array 和 vector 在分配記憶體會遵守對齊要求，
-		std::array<float, 2> 的對齊要求是 4 的倍數，vector 會看他包含的元素的對齊要求，
-		所以std::vector<std::array<float, 2>> 的 BaseAddress 至少是 4 的倍數。
-		因為std::array<float, 2> 是 8 bytes，如果 BaseAddress 是 8 的倍數，
-		前 3 筆資料內一定會對齊(地址為 32 的倍數)，沒有的話就直接用 align 的資料跑 AVX*/
-		// 在開頭最多 4 個元素內尋找對齊位址
 		const size_t alignment_search_end = std::min(end, a->begin + 4);
 		while (i < alignment_search_end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 != 0)) {
 			clusters[i] = closest_mean(data[i], means);
 			i++;
 		}
 
-		// 根據是否找到對齊位址，選擇不同的 AVX 核心迴圈
 		if (i < end && (reinterpret_cast<uintptr_t>(&data[i]) % 32 == 0)) {
-			// 找到對齊位址
 			for (; i + 3 < end; i += 4) {
-				// 對齊載入 4 個點的資料
 				__m256 points_vec = _mm256_load_ps(reinterpret_cast<const float*>(&data[i]));
-				// 計算 4 個點最近的 mean
 				__m128i final_indices_128 = find_closest_means_2d_avx_block_align(points_vec, pregen_means, num_means);
-				// 將結果儲存回記憶體
 				_mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[i]), final_indices_128);
 			}
 		} else {
-			// 未找到對齊位址
 			for (; i + 3 < end; i += 4) {
 				__m128i result =
 					find_closest_means_2d_avx_block(reinterpret_cast<const float*>(&data[i]), pregen_means, num_means);
@@ -79,70 +65,17 @@ void* worker_closest_mean_avx_2d_float(void* arg) {
 			}
 		}
 
-		// 剩餘部分
 		for (; i < end; ++i) {
 			clusters[i] = closest_mean(data[i], means);
 		}
-		return nullptr;
 	}
-	return nullptr;
-}
-
-// 預先對齊資料
-template <typename T, size_t N>
-void* worker_closest_mean_avx_2d_float_align(void* arg) {
-	if constexpr (N == 2 && std::is_same_v<T, float>) {
-		auto* a = static_cast<details::ThreadArgs<T, N>*>(arg);
-		const size_t start_idx = a->begin;
-		const size_t end_idx = a->end;
-
-		// 如果沒有被分配到工作，直接返回
-		if (start_idx >= end_idx) {
-			return nullptr;
-		}
-
-		const auto& original_data = *a->data;
-		const auto& means = *a->means;
-		auto& clusters = *a->clusters;
-		const size_t num_means = means.size();
-		const size_t task_size = end_idx - start_idx;
-
-		std::vector<std::array<T, N>, AlignedAllocator<std::array<T, N>, 32>> aligned_task_data(task_size);
-
-		std::copy(original_data.begin() + start_idx, original_data.begin() + end_idx, aligned_task_data.begin());
-
-		const auto& data = aligned_task_data;
-
-		std::vector<__m256, AlignedAllocator<__m256, 32>> pregen_means(num_means);
-		for (size_t m = 0; m < num_means; ++m) {
-			const float mx = means[m][0];
-			const float my = means[m][1];
-			pregen_means[m] = _mm256_setr_ps(mx, my, mx, my, mx, my, mx, my);
-		}
-
-		const __m256i pack_mask = _mm256_set_epi32(0, 0, 0, 0, 6, 4, 2, 0);
-
-		for (size_t i = 0; i + 3 < task_size; i += 4) {
-			__m256 points_vec = _mm256_load_ps(reinterpret_cast<const float*>(&data[i]));
-			__m128i final_indices_128 = find_closest_means_2d_avx_block_align(points_vec, pregen_means, num_means);
-			_mm_storeu_si128(reinterpret_cast<__m128i*>(&clusters[start_idx + i]), final_indices_128);
-		}
-
-		size_t last_avx_idx = (task_size / 4) * 4;
-		for (size_t i = last_avx_idx; i < task_size; ++i) {
-			clusters[start_idx + i] = closest_mean(data[i], means);
-		}
-		return nullptr;
-	}
-	return nullptr;
 }
 
 /*
-pthread worker：計算每個點到最近中心的歐式距離平方 (AVX2)
+Thread pool worker：計算每個點到最近中心的歐式距離平方 (AVX2)
 */
 template <typename T, size_t N>
-void* worker_closest_distance_avx(void* arg) {
-	auto* a = static_cast<details::ThreadArgs<T, N>*>(arg);
+void worker_closest_distance_avx(details::ThreadArgs<T, N>* a) {
 	const auto& data = *a->data;
 	const auto& means = *a->means;
 	auto& distances = *a->distances;
@@ -157,11 +90,10 @@ void* worker_closest_distance_avx(void* arg) {
 		}
 		distances[i] = best;
 	}
-	return nullptr;
 }
 
 template <typename T, size_t N>
-std::vector<T> closest_distance_pth_avx(const std::vector<std::array<T, N>>& means,
+std::vector<T> closest_distance_tp_avx(const std::vector<std::array<T, N>>& means,
 	const std::vector<std::array<T, N>>& data,
 	const clustering_parameters<T>& parameters) {
 	const size_t n = data.size();
@@ -171,8 +103,8 @@ std::vector<T> closest_distance_pth_avx(const std::vector<std::array<T, N>>& mea
 
 	size_t nthr = determine_num_threads(parameters);
 
+	static ThreadPool pool(nthr);
 	const size_t chunk = (n + nthr - 1) / nthr;
-	std::vector<pthread_t> threads(nthr);
 	std::vector<details::ThreadArgs<T, N>> args(nthr);
 
 	for (size_t t = 0; t < nthr; ++t) {
@@ -183,15 +115,15 @@ std::vector<T> closest_distance_pth_avx(const std::vector<std::array<T, N>>& mea
 		a.data = &data;
 		a.means = &means;
 		a.distances = &distances;
-		pthread_create(&threads[t], nullptr, &details::worker_closest_distance_avx<T, N>, &a);
+		pool.enqueue([&, t]() { details::worker_closest_distance_avx<T, N>(&args[t]); });
 	}
-	for (size_t t = 0; t < nthr; ++t)
-		pthread_join(threads[t], nullptr);
+
+	pool.wait_all();
 	return distances;
 }
 
 template <typename T, size_t N>
-std::vector<std::array<T, N>> random_plusplus_pt_avx(
+std::vector<std::array<T, N>> random_plusplus_tp_avx(
 	const std::vector<std::array<T, N>>& data, uint32_t k, uint64_t seed, const clustering_parameters<T>& parameters) {
 	assert(k > 0);
 	assert(data.size() > 0);
@@ -204,7 +136,7 @@ std::vector<std::array<T, N>> random_plusplus_pt_avx(
 	means.push_back(data[uniform_generator(rand_engine)]);
 
 	for (uint32_t count = 1; count < k; ++count) {
-		auto distances = details::closest_distance_pth_avx(means, data, parameters);
+		auto distances = details::closest_distance_tp_avx(means, data, parameters);
 
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
 		std::discrete_distribution<input_size_t> generator(distances.begin(), distances.end());
@@ -219,11 +151,10 @@ std::vector<std::array<T, N>> random_plusplus_pt_avx(
 }
 
 /*
-pthread worker：計算每個點最近的中心索引 (AVX2 版本)
+Thread pool worker：計算每個點最近的中心索引 (AVX2 版本)
 */
 template <typename T, size_t N>
-void* worker_closest_mean_avx(void* arg) {
-	auto* a = static_cast<details::ThreadArgs<T, N>*>(arg);
+void worker_closest_mean_avx(details::ThreadArgs<T, N>* a) {
 	const auto& data = *a->data;
 	const auto& means = *a->means;
 	auto& clusters = *a->clusters;
@@ -241,11 +172,10 @@ void* worker_closest_mean_avx(void* arg) {
 		}
 		clusters[idx] = best_id;
 	}
-	return nullptr;
 }
 
 template <typename T, size_t N>
-std::vector<uint32_t> calculate_clusters_pt_avx(const std::vector<std::array<T, N>>& data,
+std::vector<uint32_t> calculate_clusters_tp_avx(const std::vector<std::array<T, N>>& data,
 	const std::vector<std::array<T, N>>& means,
 	const clustering_parameters<T>& parameters) {
 	const size_t n = data.size();
@@ -255,8 +185,8 @@ std::vector<uint32_t> calculate_clusters_pt_avx(const std::vector<std::array<T, 
 
 	size_t nthr = determine_num_threads(parameters);
 
+	static ThreadPool pool(nthr);
 	const size_t chunk = (n + nthr - 1) / nthr;
-	std::vector<pthread_t> threads(nthr);
 	std::vector<details::ThreadArgs<T, N>> args(nthr);
 
 	for (size_t t = 0; t < nthr; ++t) {
@@ -267,24 +197,25 @@ std::vector<uint32_t> calculate_clusters_pt_avx(const std::vector<std::array<T, 
 		a.data = &data;
 		a.means = &means;
 		a.clusters = &clusters;
+
 		if constexpr (N == 2 && std::is_same_v<T, float>) {
-			pthread_create(&threads[t], nullptr, &details::worker_closest_mean_avx_2d_float<T, N>, &a);
+			pool.enqueue([&, t]() { details::worker_closest_mean_avx_2d_float<T, N>(&args[t]); });
 		} else {
-			pthread_create(&threads[t], nullptr, &details::worker_closest_mean_avx<T, N>, &a);
+			pool.enqueue([&, t]() { details::worker_closest_mean_avx<T, N>(&args[t]); });
 		}
 	}
-	for (size_t t = 0; t < nthr; ++t)
-		pthread_join(threads[t], nullptr);
+
+	pool.wait_all();
 	return clusters;
 }
 
 } // namespace details
 
 /*
-主函式：kmeans_lloyd_pthread_avx (AVX2 + pthread 版本)
+主函式：kmeans_lloyd_tp_avx (AVX2 + Thread Pool 版本)
 */
 template <typename T, size_t N>
-std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt_avx(
+std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_tp_avx(
 	const std::vector<std::array<T, N>>& data, const clustering_parameters<T>& parameters) {
 	static_assert(std::is_arithmetic<T>::value && std::is_signed<T>::value,
 		"kmeans_lloyd requires the template parameter T to be a signed arithmetic type (e.g. float, double, int)");
@@ -294,7 +225,7 @@ std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt
 	uint64_t seed = parameters.has_random_seed() ? parameters.get_random_seed() : rand_device();
 
 	std::vector<std::array<T, N>> means =
-		details::random_plusplus_pt_avx<T, N>(data, parameters.get_k(), seed, parameters);
+		details::random_plusplus_tp_avx<T, N>(data, parameters.get_k(), seed, parameters);
 
 	std::vector<std::array<T, N>> old_means;
 	std::vector<std::array<T, N>> old_old_means;
@@ -302,7 +233,7 @@ std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt
 
 	uint64_t count = 0;
 	do {
-		clusters = details::calculate_clusters_pt_avx<T, N>(data, means, parameters);
+		clusters = details::calculate_clusters_tp_avx<T, N>(data, means, parameters);
 		old_old_means = old_means;
 		old_means = means;
 		means = details::calculate_means_avx<T, N>(data, clusters, old_means, parameters.get_k());
@@ -310,13 +241,13 @@ std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt
 	} while ((means != old_means && means != old_old_means)
 		&& !(parameters.has_max_iteration() && count == parameters.get_max_iteration())
 		&& !(parameters.has_min_delta()
-			&& details::deltas_below_limit<T>(details::deltas<T, N>(old_means, means), parameters.get_min_delta())));
+			&& details::deltas_below_limit(details::deltas<T, N>(old_means, means), parameters.get_min_delta())));
 
 	return std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>>(means, clusters);
 }
 
 template <typename T, size_t N>
-std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt_avx(
+std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_tp_avx(
 	const std::vector<std::array<T, N>>& data, uint32_t k, uint64_t max_iter = 0, T min_delta = -1.0) {
 	clustering_parameters<T> parameters(k);
 	if (max_iter != 0) {
@@ -325,9 +256,9 @@ std::tuple<std::vector<std::array<T, N>>, std::vector<uint32_t>> kmeans_lloyd_pt
 	if (min_delta != 0) {
 		parameters.set_min_delta(min_delta);
 	}
-	return kmeans_lloyd_pt_avx<T, N>(data, parameters);
+	return kmeans_lloyd_tp_avx<T, N>(data, parameters);
 }
 
 } // namespace dkm
 
-#endif /* DKM_PTHREAD_AVX_KMEANS_H */
+#endif /* DKM_THREAD_POOL_AVX_KMEANS_H */

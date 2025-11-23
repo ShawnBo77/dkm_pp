@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I./include -mavx2 -mfma
+CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I./include -mavx2 -mfma -Wno-ignored-attributes
 LDFLAGS := -lpthread
 
 # OpenMP flag
