@@ -50,7 +50,6 @@ void write_wide_csv(const std::string& dataset_name,
 	const WideBenchResult& results,
 	const std::vector<uint32_t>& thread_counts,
 	const std::vector<std::string>& method_order) {
-
 	std::string filename = "results_" + dataset_name;
 	size_t pos = filename.find(".data.csv");
 	if (pos != std::string::npos) {
@@ -131,6 +130,7 @@ void run_all_benchmarks_for_dataset(const std::string& path,
 	auto serial_func_ptr = static_cast<kmeans_func_t>(dkm::kmeans_lloyd<T, N>);
 	double serial_time = profile_dkm_generic(serial_func_ptr, data, serial_params);
 	wide_results["Serial"][1] = serial_time;
+	std::cout << "  - Serial: " << std::fixed << std::setprecision(4) << serial_time << " ms" << std::endl;
 
 
 	// --- Parallel versions ---
@@ -143,7 +143,10 @@ void run_all_benchmarks_for_dataset(const std::string& path,
 		auto run = [&](const std::string& name, kmeans_func_t func) {
 			double time_ms = profile_dkm_generic(func, data, params);
 			wide_results[name][t] = time_ms;
+			std::cout << "  - " << std::left << std::setw(25) << (name + ":") << std::right << std::setw(10)
+					  << std::fixed << std::setprecision(4) << time_ms << " ms" << std::endl;
 		};
+
 
 		// Pthread
 		run("Pthread", static_cast<kmeans_func_t>(dkm::kmeans_lloyd_pt<T, N>));
@@ -172,8 +175,7 @@ int main() {
 	std::cout << "# BEGINNING BENCHMARKS #\n" << std::endl;
 
 	const std::vector<uint32_t> thread_counts = {1, 2, 3, 4, 5, 6, 7, 8};
-    const std::vector<std::string> method_order = {
-		"Serial",
+	const std::vector<std::string> method_order = {"Serial",
 		"Pthread",
 		"Pthread_AVX",
 		"Pthread_AVX_Unalign",
@@ -185,8 +187,7 @@ int main() {
 		"Thread_Pool_V2",
 		"Thread_Pool_V2_AVX",
 		"Thread_Pool_V2_AVX_Unalign",
-		"Thread_Pool_V2_AVX_Prealign"
-	};
+		"Thread_Pool_V2_AVX_Prealign"};
 
 	run_all_benchmarks_for_dataset<float, 2>("iris.data.csv", 3, thread_counts, method_order);
 	run_all_benchmarks_for_dataset<float, 2>("s1.data.csv", 15, thread_counts, method_order);
